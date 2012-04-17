@@ -67,6 +67,7 @@
 start_link() ->
     start_link(["manager/conf", "ne.conf"]).
 
+%Opts=[ConfigDir, AgentsConfig,...]
 start_link(Opts) when is_list(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [self(), Opts], []).
 
@@ -146,7 +147,7 @@ read_ne_config(File) ->
 
 %save ne data to ETS
 save_to_ets([]) ->
-    io:format("NE config loaded to ETS: ~n",[]);
+    io:format("NE config loaded to ETS~n",[]);
 save_to_ets([First|Tail]) ->
     {TargetId, Ip, AgentOpts} = First,
     ets:insert(?NE_TABLE,{Ip, {TargetId, AgentOpts}}),
@@ -414,8 +415,19 @@ handle_error(ReqId, Reason, Server) when is_pid(Server) ->
     ignore.
 
 
+%if info from unknow (unregistered) agent received,
+%look up agent IP in ETS and register new agent
+%(if exist in table) 
 handle_agent(Addr, Port, Type, SnmpInfo, Server) when is_pid(Server) ->
-    report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo}),
+    case ets:lookup(?NE_TABLE,tuple_to_list(Addr)) of
+	[{Addr,{TargetId,AgentOpts}}] -> 
+	    agent(TargetId, lists:append(AgentOpts,[{address, Addr}, {port, Port}])),
+	    report_callback(Server, handle_trap, {TargetId, SnmpInfo});
+	[] -> 
+	    io:format("Received info from unknown element. IP: ~p~n",[Addr]),
+	    report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo})  
+    end,
+    %report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo}),
     ignore.
 
 
