@@ -1,0 +1,11 @@
+{priority, normal}.
+{versions, [v1,v2]}.
+{config, [{dir, "/home/andrew/erlang/snmp/snmp_man/manager/conf/"}, {verbosity, silence}, {
+db_dir, "/home/andrew/erlang/snmp/snmp_man/manager/db/"}, {repair, true}, {auto_save, 5000}
+]}.
+{inform_request_behaviour, auto}.
+{mibs, []}.
+{server, [{timeout,30000},{verbosity,silence}]}.
+{note_store, [{timeout,30000},{verbosity,silence}]}.
+{net_if, [{module,snmpm_net_if},{verbosity,silence},{options,[{bind_to,true},{no_reuse,false}]}]}.
+{def_user_mod, snmp_mon}.
