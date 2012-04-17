@@ -16,12 +16,9 @@
 %% 
 %% %CopyrightEnd%
 %%
-%%----------------------------------------------------------------------
-%% This module examplifies how to write test suites for your SNMP agent.
-%%----------------------------------------------------------------------
 
 %%
-%% My fork
+%% My fork (2012-04-16)
 %%
 
 -module(snmp_mon).
@@ -58,6 +55,7 @@
 -define(SERVER,   ?MODULE).
 -define(USER,     snmp_user).
 -define(USER_MOD, ?MODULE).
+-define(NE_TABLE, ne_table).
 
 -record(state, {parent}).
 
@@ -67,7 +65,7 @@
 %%%-------------------------------------------------------------------
 
 start_link() ->
-    start_link(["manager/conf"]).
+    start_link(["manager/conf", "ne.conf"]).
 
 start_link(Opts) when is_list(Opts) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [self(), Opts], []).
@@ -118,21 +116,41 @@ init([Parent, Opts]) ->
 	    {stop, Crap}
     end.
 
-do_init([Dir|_Opts]) ->
-    MgrConf = read_config(Dir),
-    MgrOpts = lists:append(MgrConf,[{def_user_data,self()}]),
-%    io:format("Manager Options: ~p~n",[MgrOpts]),
+do_init([Dir|Opts]) ->
+    MgrConf = read_mgr_config(Dir),
+    MgrOpts = lists:append(MgrConf,[{def_user_data,self()}]), %append Pid to default user data
+    [NeFile|_Opt]=Opts,
+    read_ne_config(NeFile),
     start_manager(MgrOpts),
     register_user(),
     {ok, #state{}}.
 
-read_config(Dir) ->
+%read manager options, like snmp version, db path...
+read_mgr_config(Dir) ->
     case file:consult(Dir ++ "/manager.opts") of
 	{ok, Conf} ->
 	    Conf;
 	Error ->
 	    error({failed_read_config}, Error)
-     end.
+    end.
+
+%read ne.conf and put data to ETS table
+read_ne_config(File) ->
+    case file:consult(File) of
+	{ok,Cfg} ->
+	    ets:new(?NE_TABLE,[set,named_table,protected]),
+	    save_to_ets(Cfg);
+	Error ->
+	    error({failed_read_ne_conf},Error)
+    end.
+
+%save ne data to ETS
+save_to_ets([]) ->
+    io:format("NE config loaded to ETS: ~n",[]);
+save_to_ets([First|Tail]) ->
+    {TargetId, Ip, AgentOpts} = First,
+    ets:insert(?NE_TABLE,{Ip, {TargetId, AgentOpts}}),
+    save_to_ets(Tail).
 
 %write_config(Dir, Conf) ->
 %    case snmp_config:write_manager_config(Dir, "", Conf) of
@@ -257,6 +275,7 @@ handle_info(Info, State) ->
 %% Returns: any (ignored by gen_server)
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
+    ets:delete(?NE_TABLE),
     ok.
 
 
