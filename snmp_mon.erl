@@ -297,9 +297,18 @@ handle_snmp_callback(handle_error, {ReqId, Reason}) ->
 	      "~n   Reason:     ~p"
 	      "~n", [ReqId, Reason]),
     ok;
+
+%if info from unknow (unregistered) agent received,
+%look up agent IP in ETS and register new agent
+%(if exist in table) 
 handle_snmp_callback(handle_agent, {Addr, Port, Type, SnmpInfo}) ->
-    {ES, EI, VBs} = SnmpInfo, 
-    io:format("*** UNKNOWN AGENT ***"
+    case ets:lookup(?NE_TABLE,tuple_to_list(Addr)) of
+	[{_Addr,{TargetId,AgentOpts}}] -> 
+	    snmpm:register_agent(?USER, TargetId, lists:append(AgentOpts,[{address, Addr}, {port, Port}])),
+	    handle_snmp_callback(handle_trap, {TargetId, SnmpInfo});
+	[] -> 
+	    {ES, EI, VBs} = SnmpInfo, 
+	    io:format("*** UNKNOWN AGENT ***"
 	      "~n   Address:   ~p"
 	      "~n   Port:      ~p"
 	      "~n   Type:      ~p"
@@ -307,7 +316,8 @@ handle_snmp_callback(handle_agent, {Addr, Port, Type, SnmpInfo}) ->
 	      "~n     Error Status: ~w"
 	      "~n     Error Index:  ~w"
 	      "~n     Varbinds:     ~p"
-	      "~n", [Addr, Port, Type, ES, EI, VBs]),
+	      "~n", [Addr, Port, Type, ES, EI, VBs])
+    end,
     ok;
 handle_snmp_callback(handle_pdu, {TargetName, ReqId, SnmpResponse}) ->
     {ES, EI, VBs} = SnmpResponse, 
@@ -415,19 +425,8 @@ handle_error(ReqId, Reason, Server) when is_pid(Server) ->
     ignore.
 
 
-%if info from unknow (unregistered) agent received,
-%look up agent IP in ETS and register new agent
-%(if exist in table) 
 handle_agent(Addr, Port, Type, SnmpInfo, Server) when is_pid(Server) ->
-    case ets:lookup(?NE_TABLE,tuple_to_list(Addr)) of
-	[{Addr,{TargetId,AgentOpts}}] -> 
-	    agent(TargetId, lists:append(AgentOpts,[{address, Addr}, {port, Port}])),
-	    report_callback(Server, handle_trap, {TargetId, SnmpInfo});
-	[] -> 
-	    io:format("Received info from unknown element. IP: ~p~n",[Addr]),
-	    report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo})  
-    end,
-    %report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo}),
+    report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo}),
     ignore.
 
 
