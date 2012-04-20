@@ -28,13 +28,14 @@
 
 %% Avoid warning for local function error/1 clashing with autoimported BIF.
 -compile({no_auto_import,[error/1]}).
--export([start_link/0, start_link/1, stop/0,
+-export([start/0, start_link/0, start_link/1, stop/0,
 	 agent/2, 
          sync_get/2, 
          sync_get_next/2, 
          sync_get_bulk/4, 
          sync_set/2, 
-	 oid_to_name/1
+	 oid_to_name/1,
+	 reload_ne_conf/0
 	]).
 
 %% Manager callback API:
@@ -51,11 +52,11 @@
 
 -include_lib("snmp/include/snmp_types.hrl").
 
-
 -define(SERVER,   ?MODULE).
 -define(USER,     snmp_user).
 -define(USER_MOD, ?MODULE).
 -define(NE_TABLE, ne_table).
+-define(NE_CONFIG, "ne.conf").
 
 -record(state, {parent}).
 
@@ -64,8 +65,11 @@
 %%% API
 %%%-------------------------------------------------------------------
 
+start() ->
+    start_link().
+
 start_link() ->
-    start_link(["manager/conf", "ne.conf"]).
+    start_link(["manager/conf", ?NE_CONFIG]).
 
 %Opts=[ConfigDir, AgentsConfig,...]
 start_link(Opts) when is_list(Opts) ->
@@ -101,7 +105,16 @@ sync_set(TargetName, VarsAndVals) ->
 oid_to_name(Oid) ->
     call({oid_to_name, Oid}).
 
+reload_ne_conf() ->
+    cast(reload_nes).
 
+reload_nes() ->
+    case file:consult(?NE_CONFIG) of
+	{ok,Cfg} ->
+	    save_to_ets(Cfg);
+	Error ->
+	    error({failed_reload_ne_conf},Error)
+    end.
 %%%-------------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%-------------------------------------------------------------------
@@ -249,6 +262,10 @@ handle_cast(stop, S) ->
     (catch snmpm:stop()),
     {stop, normal, S};
 
+handle_cast(reload_nes, S) ->
+    reload_nes(),
+    {noreply, S};
+
 handle_cast(Msg, State) ->
     error_msg("received unknown message ~n~p", [Msg]),
     {noreply, State}.
@@ -297,27 +314,13 @@ handle_snmp_callback(handle_error, {ReqId, Reason}) ->
 	      "~n   Reason:     ~p"
 	      "~n", [ReqId, Reason]),
     ok;
-
-%if info from unknow (unregistered) agent received,
-%look up agent IP in ETS and register new agent
-%(if exist in table) 
 handle_snmp_callback(handle_agent, {Addr, Port, Type, SnmpInfo}) ->
-    case ets:lookup(?NE_TABLE,tuple_to_list(Addr)) of
-	[{_Addr,{TargetId,AgentOpts}}] -> 
-	    snmpm:register_agent(?USER, TargetId, lists:append(AgentOpts,[{address, Addr}, {port, Port}])),
-	    handle_snmp_callback(handle_trap, {TargetId, SnmpInfo});
-	[] -> 
-	    {ES, EI, VBs} = SnmpInfo, 
 	    io:format("*** UNKNOWN AGENT ***"
 	      "~n   Address:   ~p"
 	      "~n   Port:      ~p"
 	      "~n   Type:      ~p"
-	      "~n   SNMP Info: "
-	      "~n     Error Status: ~w"
-	      "~n     Error Index:  ~w"
-	      "~n     Varbinds:     ~p"
-	      "~n", [Addr, Port, Type, ES, EI, VBs])
-    end,
+	      "~n   SNMP Info: ~p~n",
+	      [Addr, Port, Type, SnmpInfo]),
     ok;
 handle_snmp_callback(handle_pdu, {TargetName, ReqId, SnmpResponse}) ->
     {ES, EI, VBs} = SnmpResponse, 
@@ -424,9 +427,24 @@ handle_error(ReqId, Reason, Server) when is_pid(Server) ->
     report_callback(Server, handle_error, {ReqId, Reason}),
     ignore.
 
-
+%if info from unknow (unregistered) agent received,
+%look up agent IP in ETS and register new agent
+%(if exist in table) 
 handle_agent(Addr, Port, Type, SnmpInfo, Server) when is_pid(Server) ->
-    report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo}),
+    case ets:lookup(?NE_TABLE,tuple_to_list(Addr)) of
+	[{_Addr,{TargetId,AgentOpts}}] -> 
+	    case lists:member(TargetId,snmpm:which_agents()) of
+		true ->
+		    %if agent with same TargetId already registered, probably SnmpInfo received from different Port
+		    % ***may by unregister and register agent???
+		    snmpm:update_agent_info(?USER,TargetId,port,Port);
+		false ->
+		    snmpm:register_agent(?USER, TargetId, lists:append(AgentOpts,[{address, Addr}, {port, Port}]))
+	    end,
+	    report_callback(Server,handle_trap, {TargetId, SnmpInfo});
+	[] -> 
+	    report_callback(Server, handle_agent, {Addr, Port, Type, SnmpInfo})
+    end,
     ignore.
 
 
