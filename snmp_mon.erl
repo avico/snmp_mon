@@ -109,9 +109,16 @@ reload_ne_conf() ->
     cast(reload_nes).
 
 reload_nes() ->
+    AgentIpOrig = [ X || {X,_} <- ets:tab2list(?NE_TABLE) ],
     case file:consult(?NE_CONFIG) of
 	{ok,Cfg} ->
-	    save_to_ets(Cfg);
+	    save_to_ets(Cfg),
+	    AgentIpNew = [ X || {_,X,_} <- Cfg ],
+	    L=AgentIpOrig--AgentIpNew,
+	    if
+		L /= [] -> del_from_ets(L);
+		true -> ok
+	    end;
 	Error ->
 	    error({failed_reload_ne_conf},Error)
     end.
@@ -165,6 +172,13 @@ save_to_ets([First|Tail]) ->
     {TargetId, Ip, AgentOpts} = First,
     ets:insert(?NE_TABLE,{Ip, {TargetId, AgentOpts}}),
     save_to_ets(Tail).
+
+%remove deleted Agent Ip and Options in ne.conf from ETS
+del_from_ets([]) ->
+    ok;
+del_from_ets([Ip|IpList]) ->
+    ets:delete(?NE_TABLE,Ip),
+    del_from_ets(IpList).
 
 %write_config(Dir, Conf) ->
 %    case snmp_config:write_manager_config(Dir, "", Conf) of
