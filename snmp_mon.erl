@@ -145,6 +145,7 @@ do_init([Dir|Opts]) ->
     read_ne_config(NeFile),
     start_manager(MgrOpts),
     register_user(),
+    load_mibs(filelib:wildcard("mib/*.bin")),
     {ok, #state{}}.
 
 %read manager options, like snmp version, db path...
@@ -180,6 +181,13 @@ del_from_ets([]) ->
 del_from_ets([Ip|IpList]) ->
     ets:delete(?NE_TABLE,Ip),
     del_from_ets(IpList).
+
+% load all compiled MIBs in mib directory
+load_mibs([]) ->
+    ok;
+load_mibs([H|T]) ->
+    catch snmpm:load_mib(filename:rootname(H,".bin")),
+    load_mibs(T).
 
 %write_config(Dir, Conf) ->
 %    case snmp_config:write_manager_config(Dir, "", Conf) of
@@ -417,10 +425,12 @@ timestamp() ->
     T = io_lib:format('~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~2..0b',[Y,M,D,H,Mm,S]),
     lists:flatten(T).
 
+% transform Oid list to string
 oid_to_s(List) ->
     Oid = lists:concat([integer_to_list(X) ++ "." || X <- List]),
     lists:sublist(Oid,length(Oid)-1).
 
+% handle generic trap
 generic_trap(Gtrap) ->
     case Gtrap of
 	0 ->
@@ -455,6 +465,7 @@ generic_trap(Gtrap) ->
 	    end
     end.
 
+% get name for specific trap or puts default value
 specific_trap(Oid) ->
     case snmpm:oid_to_name(Oid) of
 	{ok,Name} -> atom_to_list(Name);
