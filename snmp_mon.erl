@@ -57,6 +57,7 @@
 -define(USER_MOD, ?MODULE).
 -define(NE_TABLE, ne_table).
 -define(NE_CONFIG, "ne.conf").
+-define(DEF_TRAP_NAME,"TRAPD").
 
 -record(state, {parent}).
 
@@ -348,25 +349,25 @@ handle_snmp_callback(handle_pdu, {TargetName, ReqId, SnmpResponse}) ->
 	      "~n", [TargetName, ReqId, ES, EI, VBs]),
     ok;
 handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
-    TrapStr = 
-	case SnmpTrap of
-	    {Enteprise, Generic, Spec, Timestamp, Varbinds} ->
-		io_lib:format("~n     Generic:    ~w"
-			      "~n     Exterprise: ~w"
-			      "~n     Specific:   ~w"
-			      "~n     Timestamp:  ~w"
-			      "~n     Varbinds:   ~p", 
-			      [Generic, Enteprise, Spec, Timestamp, Varbinds]);
+    case SnmpTrap of
+	    % snmp v1
+	    {Enterprise, Generic, Spec, _Timestamp, Varbinds} ->
+		case Generic of
+		    % specific trap
+		    6 -> Strap = lists:append([Enterprise,[0],[Spec]]),
+			 Trap = oid_to_s(Strap),
+			 Name = specific_trap(Strap);
+		    % generic trap
+		    X -> {Trap,Name1} = generic_trap(X),
+			 Name = atom_to_list(Name1)
+		end,	
+		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Varbinds]);
 	    {ErrorStatus, ErrorIndex, Varbinds} ->
-		io_lib:format("~n     Error Status: ~w"
+		io:format("Error Status: ~w"
 			      "~n     Error Index:  ~w"
 			      "~n     Varbinds:     ~p"
 			      "~n", [ErrorStatus, ErrorIndex, Varbinds])
-	end,
-    io:format("*** Received TRAP ***"
-	      "~n   TargetName: ~p"
-	      "~n   SNMP trap:  ~s"
-	      "~n", [TargetName, lists:flatten(TrapStr)]),
+    end,
     ok;
 handle_snmp_callback(handle_inform, {TargetName, SnmpInform}) ->
     {ES, EI, VBs} = SnmpInform, 
@@ -411,6 +412,54 @@ call(Req) ->
 cast(Msg) ->
     gen_server:cast(?SERVER, Msg).
 
+timestamp() ->
+    {{Y,M,D},{H,Mm,S}} = calendar:local_time(),
+    T = io_lib:format('~4..0b-~2..0b-~2..0b ~2..0b:~2..0b:~2..0b',[Y,M,D,H,Mm,S]),
+    lists:flatten(T).
+
+oid_to_s(List) ->
+    Oid = lists:concat([integer_to_list(X) ++ "." || X <- List]),
+    lists:sublist(Oid,length(Oid)-1).
+
+generic_trap(Gtrap) ->
+    case Gtrap of
+	0 ->
+	    case snmpm:name_to_oid(coldStart) of
+		{ok,[Trap]} -> {oid_to_s(Trap),coldStart};
+		{error, _} -> {"1.3.6.1.6.3.1.1.5.1", coldStart}
+	    end;
+	1 -> 
+	    case snmpm:name_to_oid(warmStart) of
+		{ok,[Trap]} -> {oid_to_s(Trap),warmStart};
+		{error, _} -> {"1.3.6.1.6.3.1.1.5.2", warmStart}
+	    end;
+	2 ->
+	    case snmpm:name_to_oid(linkDown) of
+		{ok,[Trap]} -> {oid_to_s(Trap),linkDown};
+		{error, _} -> {"1.3.6.1.6.3.1.1.5.3", linkDown}
+	    end;
+	3 ->
+	    case snmpm:name_to_oid(linkUp) of
+		{ok,[Trap]} -> {oid_to_s(Trap),linkUp};
+		{error, _} -> {"1.3.6.1.6.3.1.1.5.4", linkUp}
+	    end;
+	4 ->
+	    case snmpm:name_to_oid(authenticationFailure) of
+		{ok,[Trap]} -> {oid_to_s(Trap),authenticationFailure};
+		{error, _} -> {"1.3.6.1.6.3.1.1.5.5", authenticationFailure}
+	    end;
+	5 ->
+	    case snmpm:name_to_oid(egpNeighborLoss) of
+		{ok,[Trap]} -> {oid_to_s(Trap),egpNeighborLoss};
+		{error, _} -> {"1.3.6.1.2.1.11.0.5", egpNeighborLoss}
+	    end
+    end.
+
+specific_trap(Oid) ->
+    case snmpm:oid_to_name(Oid) of
+	{ok,Name} -> atom_to_list(Name);
+	{error,_} -> ?DEF_TRAP_NAME
+    end.
 
 %% ========================================================================
 %% Misc internal utility functions
