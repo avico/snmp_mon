@@ -18,10 +18,11 @@
 %%
 
 %%
-%% My fork (2012-04-16)
+%% fork (2012-04-16)
 %%
 
 -module(snmp_mon).
+-author("Andrey V Ivanov").
 
 -behaviour(gen_server).
 -behaviour(snmpm_user).
@@ -128,7 +129,7 @@ reload_nes() ->
 %%%-------------------------------------------------------------------
 
 init([Parent, Opts]) ->
-    process_flag(trap_exit, true),
+    %process_flag(trap_exit, true),
     case (catch do_init(Opts)) of
         {ok, State} ->
             {ok, State#state{parent = Parent}};
@@ -303,12 +304,9 @@ handle_cast(Msg, State) ->
 handle_info({snmp_callback, Tag, Info}, State) ->
     handle_snmp_callback(Tag, Info),
     {noreply, State};
-
 handle_info(Info, State) ->
-    error_msg("received unknown info: "
-              "~n   Info: ~p", [Info]),
+    error_msg("received unknown info:~n~p~n", [Info]),
     {noreply, State}.
-
 
 %%--------------------------------------------------------------------
 %% Func: terminate/2
@@ -369,12 +367,17 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 		    X -> {Trap,Name1} = generic_trap(X),
 			 Name = atom_to_list(Name1)
 		end,	
-		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Varbinds]);
-	    {ErrorStatus, ErrorIndex, Varbinds} ->
-		io:format("Error Status: ~w"
-			      "~n     Error Index:  ~w"
-			      "~n     Varbinds:     ~p"
-			      "~n", [ErrorStatus, ErrorIndex, Varbinds])
+	        Vars = varbinds(Varbinds,[]),
+		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
+	    % snmp v2
+	    {ErrorStatus, _ErrorIndex, Varbinds} when ErrorStatus == noError ->
+	        [_Timestamp | [{varbind, _TrapOid, _Type , Strap, _Num} | Varbinds1]] = Varbinds,
+	        Trap = oid_to_s(Strap),
+	        Name = specific_trap(Strap),
+	        Vars = varbinds(Varbinds1,[]),
+		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
+	    % snmp v2 ErrorStatus /= noError
+	    XX -> error_msg("unknown trap, or error: ~n~p~n",[XX])
     end,
     ok;
 handle_snmp_callback(handle_inform, {TargetName, SnmpInform}) ->
@@ -404,8 +407,9 @@ handle_snmp_callback(BadTag, Crap) ->
 	      "~n", [BadTag, Crap]),
     ok.
     
-
-
+%% ========================================================================
+%% internal helper functions
+%% ========================================================================
 error(Reason) ->
     throw({error, Reason}).
 
@@ -472,6 +476,15 @@ specific_trap(Oid) ->
 	{error,_} -> ?DEF_TRAP_NAME
     end.
 
+% transform Varbinds to key-value list
+varbinds([],Result) ->
+    Result;
+varbinds([Var|Vars], Acc) ->
+    {varbind, Oid, _Type , Value, _Num} = Var,
+    L=lists:append(Acc,[{oid_to_s(Oid), Value}]),
+    varbinds(Vars,L).
+
+
 %% ========================================================================
 %% Misc internal utility functions
 %% ========================================================================
@@ -509,7 +522,8 @@ handle_agent(Addr, Port, Type, SnmpInfo, Server) when is_pid(Server) ->
 	[{_Addr,{TargetId,AgentOpts}}] -> 
 	    case lists:member(TargetId,snmpm:which_agents()) of
 		true ->
-		    %if agent with same TargetId already registered, probably SnmpInfo received from different Port
+		    % !!!!!
+		    % if agent with same TargetId already registered, probably SnmpInfo received from different Port
 		    % ***may by unregister and register agent???
 		    snmpm:update_agent_info(?USER,TargetId,port,Port);
 		false ->
