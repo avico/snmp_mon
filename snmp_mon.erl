@@ -371,6 +371,7 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
 	    % snmp v2
 	    {ErrorStatus, _ErrorIndex, Varbinds} when ErrorStatus == noError ->
+	        %% first element in Varbinds - Timestamp, second - snmpTrapOid, others - snmp varbinds
 	        [_Timestamp | [{varbind, _TrapOid, _Type , Strap, _Num} | Varbinds1]] = Varbinds,
 	        Trap = oid_to_s(Strap),
 	        Name = specific_trap(Strap),
