@@ -111,13 +111,18 @@ reload_ne_conf() ->
     cast(reload_nes).
 
 reload_nes() ->
+    %current IPs
     AgentIpOrig = [ X || {X,_} <- ets:tab2list(?NE_TABLE) ],
     case file:consult(?NE_CONFIG) of
 	{ok,Cfg} ->
+	    %update ets table with new config data
 	    save_to_ets(Cfg),
+	    %updated IP list
 	    AgentIpNew = [ X || {_,X,_} <- Cfg ],
+	    %if some elements (IP) deleted in config:
 	    L=AgentIpOrig--AgentIpNew,
 	    if
+		%remove deleted IP (NEs) from ets table
 		L /= [] -> del_from_ets(L);
 		true -> ok
 	    end;
@@ -376,6 +381,7 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 	        Trap = oid_to_s(Strap),
 	        Name = specific_trap(Strap),
 	        Vars = varbinds(Varbinds1,[]),
+io:format("~p~n",[Varbinds1]),
 		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
 	    % snmp v2 ErrorStatus /= noError
 	    XX -> error_msg("unknown trap, or error: ~n~p~n",[XX])
@@ -479,12 +485,10 @@ specific_trap(Oid) ->
 
 % transform Varbinds to key-value list
 varbinds([],Result) ->
-    Result;
-varbinds([Var|Vars], Acc) ->
+    lists:reverse(Result);
+varbinds([Var|Vars],Acc) ->
     {varbind, Oid, _Type , Value, _Num} = Var,
-    L=lists:append(Acc,[{oid_to_s(Oid), Value}]),
-    varbinds(Vars,L).
-
+    varbinds(Vars,[{oid_to_s(Oid), Value}|Acc]).
 
 %% ========================================================================
 %% Misc internal utility functions
