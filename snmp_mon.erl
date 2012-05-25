@@ -381,7 +381,6 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 	        Trap = oid_to_s(Strap),
 	        Name = specific_trap(Strap),
 	        Vars = varbinds(Varbinds1,[]),
-io:format("~p~n",[Varbinds1]),
 		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
 	    % snmp v2 ErrorStatus /= noError
 	    XX -> error_msg("unknown trap, or error: ~n~p~n",[XX])
@@ -438,8 +437,11 @@ timestamp() ->
 
 % transform Oid list to string
 oid_to_s(List) ->
-    Oid = lists:concat([integer_to_list(X) ++ "." || X <- List]),
-    lists:sublist(Oid,length(Oid)-1).
+     [_Dot|Oid] = lists:concat(["." ++ integer_to_list(X) || X <- List]),
+     Oid.
+%oid_to_s(List) ->
+%    Oid = lists:concat([integer_to_list(X) ++ "." || X <- List]),
+%    lists:sublist(Oid,length(Oid)-1).
 
 % handle generic trap
 generic_trap(Gtrap) ->
