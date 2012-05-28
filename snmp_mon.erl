@@ -52,6 +52,7 @@
          code_change/3, terminate/2]).
 
 -include_lib("snmp/include/snmp_types.hrl").
+-include_lib("snmp/include/SNMPv2-MIB.hrl").
 
 -define(SERVER,   ?MODULE).
 -define(USER,     snmp_user).
