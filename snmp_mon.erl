@@ -53,6 +53,7 @@
 
 -include_lib("snmp/include/snmp_types.hrl").
 -include_lib("snmp/include/SNMPv2-MIB.hrl").
+-include_lib("unknown_traps.hrl").
 
 -define(SERVER,   ?MODULE).
 -define(USER,     snmp_user).
