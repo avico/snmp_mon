@@ -53,13 +53,13 @@
 
 -include_lib("snmp/include/snmp_types.hrl").
 -include_lib("snmp/include/SNMPv2-MIB.hrl").
--include_lib("unknown_traps.hrl").
+-include_lib("etc/unknown_traps.hrl").
 
 -define(SERVER,   ?MODULE).
 -define(USER,     snmp_user).
 -define(USER_MOD, ?MODULE).
 -define(NE_TABLE, ne_table).
--define(NE_CONFIG, "ne.conf").
+-define(NE_CONFIG, "etc/ne.conf").
 -define(DEF_TRAP_NAME,"TRAPD").
 
 -record(state, {parent}).
