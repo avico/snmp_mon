@@ -58,7 +58,9 @@
 -define(USER_MOD, ?MODULE).
 -define(NE_TABLE, ne_table).
 -define(NE_CONFIG, "etc/ne.conf").
--define(DEF_TRAP_NAME,"TRAPD").
+-define(UNKNOWN_TRAPS, "etc/unknown_traps.conf").
+-define(TRAPS_TABLE, traps_table).
+-define(DEF_TRAP_NAME,"UNKNOWN").
 
 -record(state, {parent}).
 
@@ -149,6 +151,7 @@ do_init([Dir|Opts]) ->
     MgrOpts = lists:append(MgrConf,[{def_user_data,self()}]), %append Pid to default user data
     [NeFile|_Opt]=Opts,
     read_ne_config(NeFile),
+    read_unknown_traps_cfg(?UNKNOWN_TRAPS), %unknown_traps.conf used to manually adding OID-Object name if MIB is missing or not loaded
     start_manager(MgrOpts),
     register_user(),
     load_mibs(filelib:wildcard("mib/*.bin")),
@@ -187,6 +190,22 @@ del_from_ets([]) ->
 del_from_ets([Ip|IpList]) ->
     ets:delete(?NE_TABLE,Ip),
     del_from_ets(IpList).
+
+%read etc/unknown_traps.conf (traps and symbol names for unknown/missing MIBs)
+read_unknown_traps_cfg(File) ->
+    case file:consult(File) of
+	{ok, Cfg} ->
+	    ets:new(?TRAPS_TABLE, [set, named_table, protected]),
+	    save_utraps_to_ets(Cfg);
+	Error -> error({failed_read_ne_conf},Error)  %wrong cfg file or file not used
+    end.
+
+%save unknown traps data to ets
+save_utraps_to_ets([]) ->
+    io:format("etc/unknown_traps.conf loaded to ETS~n",[]);
+save_utraps_to_ets([{Trap, Name}|Traps]) ->
+    ets:insert(?TRAPS_TABLE, {Trap, Name}),
+    save_utraps_to_ets(Traps).
 
 % load all compiled MIBs in mib directory
 load_mibs([]) ->
@@ -257,8 +276,8 @@ handle_call({agent, TargetName, Conf}, _From, S) ->
     {reply, Reply, S};
 
 handle_call({oid_to_name, Oid}, _From, S) ->
-    Reply = (catch snmpm:oid_to_name(Oid)),
-    {reply, Reply, S};
+    Reply = trap_to_name(Oid),
+    {reply, {ok, Reply}, S};
 
 handle_call({sync_get, TargetName, Oids}, _From, S) ->
     Reply = (catch snmpm:sync_get(?USER, TargetName, Oids)),
@@ -320,6 +339,7 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_Reason, _State) ->
     ets:delete(?NE_TABLE),
+    ets:delete(?TRAPS_TABLE),
     ok.
 
 
@@ -367,7 +387,7 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 		    % specific trap
 		    6 -> Strap = lists:append([Enterprise,[0],[Spec]]),
 			 Trap = oid_to_s(Strap),
-			 Name = specific_trap(Strap);
+			 Name = trap_to_name(Strap);
 		    % generic trap
 		    X -> {Trap,Name1} = generic_trap(X),
 			 Name = atom_to_list(Name1)
@@ -379,7 +399,7 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 	        %% first element in Varbinds - Timestamp, second - snmpTrapOid, others - snmp varbinds
 	        [_Timestamp | [{varbind, _TrapOid, _Type , Strap, _Num} | Varbinds1]] = Varbinds,
 	        Trap = oid_to_s(Strap),
-	        Name = specific_trap(Strap),
+	        Name = trap_to_name(Strap),
 	        Vars = varbinds(Varbinds1,[]),
 		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
 	    % snmp v2 ErrorStatus /= noError
@@ -478,11 +498,15 @@ generic_trap(Gtrap) ->
 	    end
     end.
 
-% get name for specific trap or puts default value
-specific_trap(Oid) ->
+% get name for trap or puts default value
+trap_to_name(Oid) ->
     case snmpm:oid_to_name(Oid) of
 	{ok,Name} -> atom_to_list(Name);
-	{error,_} -> ?DEF_TRAP_NAME
+	_ -> 
+		case ets:lookup(?TRAPS_TABLE, Oid) of
+		    [{_, N}] -> atom_to_list(N);
+		    [] -> ?DEF_TRAP_NAME
+		end
     end.
 
 % transform Varbinds to key-value list
