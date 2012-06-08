@@ -61,6 +61,10 @@
 -define(UNKNOWN_TRAPS, "etc/unknown_traps.conf").
 -define(TRAPS_TABLE, traps_table).
 -define(DEF_TRAP_NAME,"UNKNOWN").
+% save_to_table is the function realized in module db_interface to save data to the database. 
+% It's possible to write own db_interface to use any SQL or noSQL database.
+% usage: ?SAVE([DateTime, TargetName, Name, Trap, Varbinds])
+-define(SAVE, db_interface:save_to_table).
 
 -record(state, {parent}).
 
@@ -214,14 +218,6 @@ load_mibs([H|T]) ->
     catch snmpm:load_mib(filename:rootname(H,".bin")),
     load_mibs(T).
 
-%write_config(Dir, Conf) ->
-%    case snmp_config:write_manager_config(Dir, "", Conf) of
-%	ok ->
-%	    ok;
-%	Error ->
-%	    error({failed_writing_config, Error})
-%    end.
-
 start_manager(Opts) ->
     case snmpm:start_link(Opts) of
 	ok ->
@@ -237,28 +233,6 @@ register_user() ->
 	Error ->
 	    error({failed_register_user, Error})
     end.
-
-%parse_opts(Opts) ->
-%    Port     = get_opt(port,             Opts, 5000),
-%    EngineId = get_opt(engine_id,        Opts, "mgrEngine"),
-%    MMS      = get_opt(max_message_size, Opts, 484),
-
-%    MgrConf = [{port,             Port},
-%               {engine_id,        EngineId},
-%               {max_message_size, MMS}],
-
-    %% Manager options
-%    Mibs      = get_opt(mibs,     Opts, []),
-%    Vsns      = get_opt(versions, Opts, [v1, v2, v3]),
-%    {ok, Cwd} = file:get_cwd(),
-%    Dir       = get_opt(dir, Opts, Cwd),
-%    MgrOpts   = [{mibs,     Mibs},
-%		 {versions, Vsns}, 
-		 %% {server,   [{verbosity, trace}]}, 
-%		 {config,   [% {verbosity, trace}, 
-%			     {dir, Dir}, {db_dir, Dir}]}],
-    
-%   {Dir, MgrConf, MgrOpts}.
 
 
 %%--------------------------------------------------------------------
@@ -380,6 +354,7 @@ handle_snmp_callback(handle_pdu, {TargetName, ReqId, SnmpResponse}) ->
 	      "~n", [TargetName, ReqId, ES, EI, VBs]),
     ok;
 handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
+    Result = 
     case SnmpTrap of
 	    % snmp v1
 	    {Enterprise, Generic, Spec, _Timestamp, Varbinds} ->
@@ -393,7 +368,8 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 			 Name = atom_to_list(Name1)
 		end,	
 	        Vars = varbinds(Varbinds,[]),
-		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
+		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]),
+		[calendar:local_time(), TargetName, Name, Trap, io_lib:format("~p", [Vars])];
 	    % snmp v2
 	    {ErrorStatus, _ErrorIndex, Varbinds} when ErrorStatus == noError ->
 	        %% first element in Varbinds - Timestamp, second - snmpTrapOid, others - snmp varbinds
@@ -401,10 +377,12 @@ handle_snmp_callback(handle_trap, {TargetName, SnmpTrap}) ->
 	        Trap = oid_to_s(Strap),
 	        Name = trap_to_name(Strap),
 	        Vars = varbinds(Varbinds1,[]),
-		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]);
+		io:format("*** Received TRAP ***~n~p | ~p | ~p | ~p~nVarbinds: ~p~n",[timestamp(), TargetName, Name, Trap, Vars]),
+	        [calendar:local_time(), TargetName, Name, Trap, io_lib:format("~p", [Vars])];
 	    % snmp v2 ErrorStatus /= noError
 	    XX -> error_msg("unknown trap, or error: ~n~p~n",[XX])
     end,
+    ?SAVE(Result),
     ok;
 handle_snmp_callback(handle_inform, {TargetName, SnmpInform}) ->
     {ES, EI, VBs} = SnmpInform, 
@@ -515,26 +493,6 @@ varbinds([],Result) ->
 varbinds([Var|Vars],Acc) ->
     {varbind, Oid, _Type , Value, _Num} = Var,
     varbinds(Vars,[{oid_to_s(Oid), Value}|Acc]).
-
-%% ========================================================================
-%% Misc internal utility functions
-%% ========================================================================
-
-%% get_opt(Key, Opts) ->
-%%     case lists:keysearch(Key, 1, Opts) of
-%%         {value, {Key, Val}} ->
-%%             Val;
-%%         false ->
-%%             throw({error, {missing_mandatory, Key}})
-%%     end.
-
-%get_opt(Key, Opts, Def) ->
-%    case lists:keysearch(Key, 1, Opts) of
-%        {value, {Key, Val}} ->
-%            Val;
-%        false ->
-%            Def
-%    end.
 
 
 %% ========================================================================
