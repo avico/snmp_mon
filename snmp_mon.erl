@@ -17,7 +17,9 @@
 %% %CopyrightEnd%
 %%
 
-%%
+%% 
+%% 
+%% lib/erlang/lib/snmp-4.21.4/examples/ex2/snmp_ex2_manager.erl
 %% fork (2012-04-16)
 %%
 
@@ -61,7 +63,7 @@
 -define(UNKNOWN_TRAPS, "etc/unknown_traps.conf").
 -define(TRAPS_TABLE, traps_table).
 -define(DEF_TRAP_NAME,"UNKNOWN").
-% save_to_table is the function realized in module db_interface to save data to the database. 
+% save_to_table() is a function, realized in module db_interface to save data to the database. 
 % It's possible to write own db_interface to use any SQL or noSQL database.
 % usage: ?SAVE([DateTime, TargetName, Name, Trap, Varbinds])
 -define(SAVE, db_interface:save_to_table).
