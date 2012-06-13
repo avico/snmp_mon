@@ -19,8 +19,8 @@
 
 %% 
 %% 
-%% lib/erlang/lib/snmp-4.21.4/examples/ex2/snmp_ex2_manager.erl
-%% fork (2012-04-16)
+%% based on lib/erlang/lib/snmp-4.21.4/examples/ex2/snmp_ex2_manager.erl
+%% (2012-04-16)
 %%
 
 -module(snmp_mon).
