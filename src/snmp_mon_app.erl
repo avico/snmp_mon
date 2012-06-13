@@ -30,7 +30,6 @@
 %% @end
 %%--------------------------------------------------------------------
 start(_StartType, _StartArgs) ->
-    code:add_patha("deps/epgsql/ebin"),
     case snmp_mon_sup:start_link() of
 	{ok, Pid} ->
 	    {ok, Pid};
