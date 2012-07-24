@@ -1,7 +1,7 @@
 {priority, normal}.
 {versions, [v1,v2]}.
-{config, [{dir, "/home/andrew/erlang/snmp/snmp_mon/manager/conf/"}, {verbosity, silence}, {
-db_dir, "/home/andrew/erlang/snmp/snmp_mon/manager/db/"}, {repair, true}, {auto_save, 5000}
+{config, [{dir, "/home/andrew/prog/erlang/snmp/snmp_mon/manager/conf/"}, {verbosity, silence}, {
+db_dir, "/home/andrew/prog/erlang/snmp/snmp_mon/manager/db/"}, {repair, true}, {auto_save, 5000}
 ]}.
 {inform_request_behaviour, auto}.
 {mibs, []}.
