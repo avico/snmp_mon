@@ -38,7 +38,8 @@
          sync_get_bulk/4, 
          sync_set/2, 
 	 oid_to_name/1,
-	 reload_ne_conf/0
+	 reload_ne_conf/0,
+	 reload_utraps/0
 	]).
 
 %% Manager callback API:
@@ -63,9 +64,10 @@
 -define(UNKNOWN_TRAPS, "etc/unknown_traps.conf").
 -define(TRAPS_TABLE, traps_table).
 -define(DEF_TRAP_NAME,"UNKNOWN").
-% save_to_table() is a function, realized in module db_interface to save data to the database. 
-% It's possible to write own db_interface to use any SQL or noSQL database.
-% usage: ?SAVE([DateTime, TargetName, Name, Trap, Varbinds])
+
+%% save_to_table() is a function, realized in module db_interface to save data to the database. 
+%% It's possible to write own db_interface to use any SQL or noSQL database.
+%% usage: ?SAVE([DateTime, TargetName, Name, Trap, Varbinds])
 -define(SAVE, db_interface:save_to_table).
 
 -record(state, {parent}).
@@ -115,28 +117,14 @@ sync_set(TargetName, VarsAndVals) ->
 oid_to_name(Oid) ->
     call({oid_to_name, Oid}).
 
+%% reload etc/ne.conf and update ETS table
 reload_ne_conf() ->
     cast(reload_nes).
 
-reload_nes() ->
-    %current IPs
-    AgentIpOrig = [ X || {X,_} <- ets:tab2list(?NE_TABLE) ],
-    case file:consult(?NE_CONFIG) of
-	{ok,Cfg} ->
-	    %update ets table with new config data
-	    save_to_ets(Cfg),
-	    %updated IP list
-	    AgentIpNew = [ X || {_,X,_} <- Cfg ],
-	    %if some elements (IP) deleted in config:
-	    L=AgentIpOrig--AgentIpNew,
-	    if
-		%remove deleted IP (NEs) from ets table
-		L /= [] -> del_from_ets(L);
-		true -> ok
-	    end;
-	Error ->
-	    error({failed_reload_ne_conf},Error)
-    end.
+%% reload etc/unknown_traps.conf and update ETS table
+reload_utraps() ->
+    cast(reload_utraps).
+
 %%%-------------------------------------------------------------------
 %%% Callback functions from gen_server
 %%%-------------------------------------------------------------------
@@ -154,16 +142,16 @@ init([Parent, Opts]) ->
 
 do_init([Dir|Opts]) ->
     MgrConf = read_mgr_config(Dir),
-    MgrOpts = lists:append(MgrConf,[{def_user_data,self()}]), %append Pid to default user data
+    MgrOpts = lists:append(MgrConf,[{def_user_data,self()}]), %% append Pid to default user data
     [NeFile|_Opt]=Opts,
-    read_ne_config(NeFile),
-    read_unknown_traps_cfg(?UNKNOWN_TRAPS), %unknown_traps.conf used to manually adding OID-Object name if MIB is missing or not loaded
+    read_config(NeFile, ?NE_TABLE, fun save_to_ets/1),  %% read ne.conf and save to ETS
+    read_config(?UNKNOWN_TRAPS, ?TRAPS_TABLE, fun save_utraps_to_ets/1), %% unknown_traps.conf used to manually adding OID-Object name if MIB is missing or not loaded
     start_manager(MgrOpts),
     register_user(),
     load_mibs(filelib:wildcard("mib/*.bin")),
     {ok, #state{}}.
 
-%read manager options, like snmp version, db path...
+%% read manager options, like snmp version, db path...
 read_mgr_config(Dir) ->
     case file:consult(Dir ++ "/manager.opts") of
 	{ok, Conf} ->
@@ -172,17 +160,17 @@ read_mgr_config(Dir) ->
 	    error({failed_read_config}, Error)
     end.
 
-%read ne.conf and put data to ETS table
-read_ne_config(File) ->
-    case file:consult(File) of
+%% read config and put data to ETS table
+read_config(Config, Table, FunSave) ->
+    case file:consult(Config) of
 	{ok,Cfg} ->
-	    ets:new(?NE_TABLE,[set,named_table,protected]),
-	    save_to_ets(Cfg);
+	    ets:new(Table, [set,named_table,protected]),
+	    FunSave(Cfg);
 	Error ->
-	    error({failed_read_ne_conf},Error)
+	    error({failed_read_config},Error)
     end.
 
-%save ne data to ETS
+%% save ne data to ETS
 save_to_ets([]) ->
     io:format("NE config loaded to ETS~n",[]);
 save_to_ets([First|Tail]) ->
@@ -190,30 +178,44 @@ save_to_ets([First|Tail]) ->
     ets:insert(?NE_TABLE,{Ip, {TargetId, AgentOpts}}),
     save_to_ets(Tail).
 
-%remove deleted Agent Ip and Options in ne.conf from ETS
-del_from_ets([]) ->
-    ok;
-del_from_ets([Ip|IpList]) ->
-    ets:delete(?NE_TABLE,Ip),
-    del_from_ets(IpList).
-
-%read etc/unknown_traps.conf (traps and symbol names for unknown/missing MIBs)
-read_unknown_traps_cfg(File) ->
-    case file:consult(File) of
-	{ok, Cfg} ->
-	    ets:new(?TRAPS_TABLE, [set, named_table, protected]),
-	    save_utraps_to_ets(Cfg);
-	Error -> error({failed_read_ne_conf},Error)  %wrong cfg file or file not used
-    end.
-
-%save unknown traps data to ets
+%% save unknown traps data to ets
 save_utraps_to_ets([]) ->
     io:format("etc/unknown_traps.conf loaded to ETS~n",[]);
 save_utraps_to_ets([{Trap, Name}|Traps]) ->
     ets:insert(?TRAPS_TABLE, {Trap, Name}),
     save_utraps_to_ets(Traps).
 
-% load all compiled MIBs in mib directory
+%% remove deleted Agent Ip and Options in ne.conf or OID in unknown_traps.conf from ETS
+del_from_ets(_Table, []) ->
+    ok;
+del_from_ets(Table, [Elem|ElemList]) ->
+    ets:delete(Table, Elem),
+    del_from_ets(Table, ElemList).
+
+%% internal function used for reload_ne_conf/0, reload_utraps/0
+reload_conf(Config, Table, FunSave) ->
+    CurrentEtsElem = [ X || {X, _} <- ets:tab2list(Table) ],
+    case file:consult(Config) of
+	{ok,Cfg} ->
+	    %% update ets table with new config data
+	    FunSave(Cfg),
+	    %% updated IP list
+	    UpdatedElemList = case Config of
+		?NE_CONFIG -> [ X || {_, X, _} <- Cfg ];
+		?UNKNOWN_TRAPS -> [ X || {X, _} <- Cfg ]
+	    end,
+	    %% if some elements (IP or OID) deleted in config:
+	    L = CurrentEtsElem -- UpdatedElemList,
+	    if
+		%% remove deleted IP (OIDs) from ets table
+		L /= [] -> del_from_ets(Table, L);
+		true -> ok
+	    end;
+	Error ->
+	    error({failed_reload_conf},Error)
+    end.
+
+%% load all compiled MIBs in mib directory
 load_mibs([]) ->
     ok;
 load_mibs([H|T]) ->
@@ -287,7 +289,11 @@ handle_cast(stop, S) ->
     {stop, normal, S};
 
 handle_cast(reload_nes, S) ->
-    reload_nes(),
+    reload_conf(?NE_CONFIG, ?NE_TABLE, fun save_to_ets/1),
+    {noreply, S};
+
+handle_cast(reload_utraps, S) ->
+    reload_conf(?UNKNOWN_TRAPS, ?TRAPS_TABLE, fun save_utraps_to_ets/1),
     {noreply, S};
 
 handle_cast(Msg, State) ->
