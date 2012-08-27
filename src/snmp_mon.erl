@@ -24,7 +24,7 @@
 %%
 
 -module(snmp_mon).
--author("Andrey V Ivanov").
+-author('Andrey V Ivanov <anvivanov@gmail.com>').
 
 -behaviour(gen_server).
 -behaviour(snmpm_user).

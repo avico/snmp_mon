@@ -17,7 +17,7 @@
 
 save_to_table([DT, Target, Name, Trap, Vars]) ->
     {ok, C} = pgsql:connect(?HOST, ?USER, ?PASSWORD, [{database, ?DB}]),
-    io:format("Connected to DB~n", []),
+    %io:format("Connected to DB~n", []),
     {ok, Count} = pgsql:equery(C, "INSERT INTO alist VALUES ($1, $2, $3, $4, $5)", [DT, Target, Name, Trap, Vars]),
-    io:format("Inserted ~p row(s)~n", [Count]),
+    %io:format("Inserted ~p row(s)~n", [Count]),
     ok = pgsql:close(C).

@@ -1,6 +1,7 @@
 #!/bin/bash
 
-WD=/home/andrew/prog/erlang/snmp/snmp_mon
+#WD=/home/andrew/prog/erlang/snmp/snmp_mon
+WD=`dirname $0`
 LOG_DIR=/tmp/snmp_mon/
 
 function usage {
