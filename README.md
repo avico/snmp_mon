@@ -33,18 +33,26 @@ Configuration
 SNMP manager config files:
 
 manager/conf/
+
 |-- agents.conf
+
 |-- manager.conf
+
 |-- manager.opts
+
 |-- users.conf
+
 `-- usm.conf
 
 manager.conf contains IP address and port (default 162) for listening traps
 manager.opts contains full path to manager/conf and manager/db directories
 
 Application config files:
+
 etc/
+
 |-- ne.conf
+
 `-- unknown_traps.conf
 
 ne.conf contains list of monitored devices (name, IP, options).
@@ -66,6 +74,8 @@ $ sudo ./snmp_mon.sh {start|stop} - start or stop application
 (run as superuser because privileged port 162 is used)
 
 After changes in etc/ne.conf run
+
 $ ./snmp_mon.sh reload_nes
 After changes in etc/unknown_traps.conf run
+
 $ ./snmp_mon.sh reload_utraps
