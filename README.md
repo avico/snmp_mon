@@ -31,6 +31,7 @@ Change config files in etc/ and manager/conf  directories.
 Configuration
 -------------------------
 SNMP manager config files:
+
 manager/conf/
 |-- agents.conf
 |-- manager.conf
